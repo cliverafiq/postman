@@ -126,23 +126,27 @@ def genome_fitness(genome: Genome, pm: PathMatrix, start_idx: int = 0) -> float:
         for edge in p_edges:
             c1 = pm.cost(vertices[-1], edge[0])
             c2 = pm.cost(vertices[-1], edge[1])
+
             if c1 <= c2:
-                path = pm.path(vertices[-1], edge[0])
-                vertices = vertices + path[1:]
+                genome = pm.path(vertices[-1], edge[0])
+                vertices = vertices + genome[1:]
                 vertices.append(edge[1])
             else:
-                path = pm.path(vertices[-1], edge[1])
-                vertices = vertices + path[1:]
+                genome = pm.path(vertices[-1], edge[1])
+                vertices = vertices + genome[1:]
                 vertices.append(edge[0])
+
         #last part - return to base
         if vertices[-1] != start_idx:
-            path = pm.path(vertices[-1], start_idx)
-            vertices = vertices + path[1:]
-        # compute total path cost
-        # print(f'edges: {pretty_edge_list(p_edges)} vertices: {pretty_vertices(vertices)} cost: {pm.path_cost(vertices)}')
+            genome = pm.path(vertices[-1], start_idx)
+            vertices = vertices + genome[1:]
+        # compute total genome cost
+        # print(f'edges: {pretty_edge_list(p_edges)} vertices: {pretty_vertices(vertices)} cost: {pm.genome_cost(vertices)}')
         p_costs.append(pm.path_cost(vertices))
         vertices_lists.append(vertices)
+
     return max(p_costs), p_costs, vertices_lists
+    
 
 def fitness_selection(genomes: List[Genome], pm: PathMatrix, fit_size: int, start_idx: int = 0) -> List[Genome]:
     """Select the top fittest genomes
