@@ -1,9 +1,10 @@
-from typing import List, Any, Callable
+from typing import List, Any, Callable, Tuple
 from adjacency import Edge, AdjMatrix, adjmatrix_to_edges, pretty_edge_list, pretty_vertices
 from path import PathMatrix
 import random 
 from copy import copy
 import math
+from results import Result, StepResult, PopulationResult
 
 Genome = List[Any] # contains both the string "P" and edges (tuple of vertex)
 
@@ -28,7 +29,6 @@ def random_solution(edges: List[Edge], k: int) -> Genome:
     :return: a random solution as a genome
     :rtype: GraphGenome
     """
-
     idx_list = list(range(len(edges)))
     edges_per_postman = len(edges) // k
     remainder = len(edges) % k
@@ -47,7 +47,8 @@ def random_solution(edges: List[Edge], k: int) -> Genome:
         idx = random.randint(0, len(idx_list)-1)
         edge = edges[idx_list[idx]]
         p_edge_lists[p].append(edge)
-    
+        del idx_list[idx]
+
     # make genome
     return postmen_edges_list_to_genome(p_edge_lists)
 
@@ -98,7 +99,7 @@ def genome_to_postmen_edge_lists(genome: Genome) -> List[List[Edge]]:
         
     return p_edges
 
-def genome_fitness(genome: Genome, pm: PathMatrix, start_idx: int = 0) -> float:
+def genome_fitness(genome: Genome, pm: PathMatrix, start_idx: int = 0) -> Tuple[float, List[float], List[int]]:
     """Compute the fitness of a genome
 
     For each postman, examine the edge list:
@@ -115,7 +116,7 @@ def genome_fitness(genome: Genome, pm: PathMatrix, start_idx: int = 0) -> float:
     :type pm: PathMatrix
     :param start_idx: the depot vertex, defaults to 0
     :type start_idx: int, optional
-    :return: the fitness value
+    :return: the fitness value (maximum tour cost), the costs for each tour, and the list of vertices for each tour
     :rtype: float
     """
     p_edge_lists = genome_to_postmen_edge_lists(genome)
@@ -144,7 +145,7 @@ def genome_fitness(genome: Genome, pm: PathMatrix, start_idx: int = 0) -> float:
         vertices_lists.append(vertices)
     return max(p_costs), p_costs, vertices_lists
 
-def fitness_selection(genomes: List[Genome], pm: PathMatrix, fit_size: int, start_idx: int = 0) -> List[Genome]:
+def fitness_selection(genomes: List[Genome], pm: PathMatrix, fit_size: int, start_idx: int = 0, debug: bool = False) -> List[Genome]:
     """Select the top fittest genomes
 
     :param genomes: a list of genomes
@@ -158,23 +159,25 @@ def fitness_selection(genomes: List[Genome], pm: PathMatrix, fit_size: int, star
     :return: the list of fittest genomes
     :rtype: List[Genome]
     """
-    fitnesses = [genome_fitness(genome, pm, start_idx)[0] for genome in genomes]
-    print(f'best fitness: {min(fitnesses)} worst: {max(fitnesses)} avg: {sum(fitnesses)/len(fitnesses)}')
-    
+    fitnesses = []
+    total_costs = []
+    for genome in genomes:
+        max_path_cost, costs, _ = genome_fitness(genome, pm, start_idx)
+        fitnesses.append(max_path_cost)
+        total_costs.append(sum(costs))
+
+    # fitnesses = [genome_fitness(genome, pm, start_idx) for genome in genomes]
+    index_best_fitness = min(range(len(fitnesses)), key=fitnesses.__getitem__)
+    pop_result = PopulationResult(best_fit=fitnesses[index_best_fitness], worst_fit=max(fitnesses), avg_fit=sum(fitnesses)/len(fitnesses), best_fit_total_cost=total_costs[index_best_fitness])
+    if debug:
+        print(f'best fitness: {pop_result.best_fit} with total cost {pop_result.best_fit_total_cost} worst fitness: {pop_result.worst_fit} avg fitness: {pop_result.avg_fit}')
+      
     sorted_pairs = sorted(zip(fitnesses, genomes), key=lambda x:x[0])
     sorted_genomes = [item for _, item in sorted_pairs]
 
-    s_fit = [genome_fitness(s, pm, start_idx)[0] for s in sorted_genomes[0:fit_size]]
+    #s_fit = [genome_fitness(s, pm, start_idx)[0] for s in sorted_genomes[0:fit_size]]
     # print(f'selected best fitness: {min(s_fit)} worst: {max(s_fit)} avg: {sum(s_fit)/len(s_fit)}')
-    return sorted_genomes[0:fit_size]
-
-    #inverse_weights = [ 1/ (num + 0.0001) for num in fitnesses]
-    #total_weight = sum(inverse_weights)
-    #normalized_weights = [w / total_weight for w in inverse_weights]
-    #selected = random.choices(genomes, weights=normalized_weights, k=fit_size)
-    #s_fit = [genome_fitness(s, pm, start_idx) for s in selected]
-    #print(f'selected best fitness: {min(s_fit)} worst: {max(s_fit)} avg: {sum(s_fit)/len(s_fit)}')
-    #return selected
+    return sorted_genomes[0:fit_size], pop_result
 
 def ordered_cross_over(p1: Genome, p2: Genome) -> Genome:
     """Crossover of two parents
@@ -196,7 +199,6 @@ def ordered_cross_over(p1: Genome, p2: Genome) -> Genome:
     idx1 = random.randint(0, len(p1)-2) # cannot be the last element of p1
     idx2 = random.randint(idx1+1, len(p1)-1)
     substring = p1[idx1:idx2+1] # right side is not inclusive
-    
     p2_c = copy(p2)
     for s in substring:
         p2_c.remove(s)
@@ -255,7 +257,7 @@ def evolve(fit_genomes: List[Genome], pop_size: int, prob_mutation: float) -> Li
     
     return children
 
-def ga_loop(am: AdjMatrix, k_postmen: int, pop_size: int, fit_size: int, start_idx, loops: int, prob_mutation: float):
+def ga_loop(am: AdjMatrix, k_postmen: int, pop_size: int, fit_size: int, start_idx, loops: int, prob_mutation: float, debug=True):
     """Main GA loop
 
     :param am: graph adjacency matrix
@@ -273,14 +275,20 @@ def ga_loop(am: AdjMatrix, k_postmen: int, pop_size: int, fit_size: int, start_i
     :param prob_mutation: probability of mutation
     :type prob_mutation: float
     """
+    result = Result(algorithm="GA", graph_name="")
+
     edges = adjmatrix_to_edges(am)
     pm = PathMatrix(am)
     genomes = initial_population(edges, k_postmen, pop_size)
 
     for _ in range(loops):
-        fit_genomes = fitness_selection(genomes, pm, fit_size, start_idx)
-        _, costs, vertices = genome_fitness(fit_genomes[0], pm, start_idx)
-        pretty_paths = [pretty_vertices(p) for p in vertices]
-        print(f'best solution costs {costs} genome {fit_genomes[0]} paths: {pretty_paths} ')
+        fit_genomes, pop_result = fitness_selection(genomes, pm, fit_size, start_idx, debug)
+        m_cost, costs, vertices = genome_fitness(fit_genomes[0], pm, start_idx)
+        if debug:
+            pretty_paths = [pretty_vertices(p) for p in vertices]
+            print(f'best solution costs {costs} genome {fit_genomes[0]} paths: {pretty_paths} ')
+        sr = StepResult(best_solution=fit_genomes[0], costs=costs, path_vertices=vertices, pop_result=pop_result)
+        result.add_iteration(sr)
         genomes = evolve(fit_genomes, pop_size, prob_mutation)
     
+    return result
