@@ -34,7 +34,7 @@ def sa_loop(am: AdjMatrix, k_postmen: int, temperature: float, alpha: float, loo
             cur_vertices = new_vertices
             temp = temp * alpha
         else:
-            p = math.exp((cur_fit-new_fit)/temp)
+            p = math.exp((cur_fit-new_fit)/temp) # probability of accepting worse solution, note that the value in exp is negative
             if debug:
                 print(p)
             r = random.random()
